@@ -27,7 +27,12 @@ import ge.merabi.callrecorder.viewmodel.RecordingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(viewModel: RecordingViewModel, hasAllPermissions: Boolean, onRequestPermissions: () -> Unit) {
+fun HomeScreen(
+    viewModel: RecordingViewModel,
+    hasAllPermissions: Boolean,
+    onRequestPermissions: () -> Unit,
+    onAutoRecordToggle: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val recordings by viewModel.recordings.collectAsState()
 
@@ -65,6 +70,7 @@ fun HomeScreen(viewModel: RecordingViewModel, hasAllPermissions: Boolean, onRequ
                 Switch(checked = autoRecord, onCheckedChange = {
                     autoRecord = it
                     SettingsStore.setAutoRecordEnabled(context, it)
+                    onAutoRecordToggle(it)
                 })
             }
             Spacer(Modifier.height(12.dp))

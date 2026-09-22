@@ -2,6 +2,7 @@ package ge.merabi.callrecorder.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -9,6 +10,8 @@ import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import ge.merabi.callrecorder.data.AppDatabase
 import ge.merabi.callrecorder.data.Recording
@@ -21,13 +24,17 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * მუდმივად აქტიური (foreground) "მონიტორინგის" სერვისი. მას თავად UI რთავს
+ * (მომხმარებლის ქმედებით — toggle), ამიტომ Android-ის "background-იდან
+ * სერვისის გაშვების" შეზღუდვა მასზე არ ვრცელდება. სერვისის შიგნით
+ * ვუსმენთ ზარის სტატუსის ცვლილებებს პირდაპირ TelephonyManager-ით.
+ */
 class CallRecordingService : Service() {
 
     companion object {
-        const val ACTION_START = "ge.merabi.callrecorder.START"
-        const val ACTION_STOP = "ge.merabi.callrecorder.STOP"
-        const val EXTRA_PHONE_NUMBER = "phone_number"
-        const val EXTRA_CALL_TYPE = "call_type"
+        const val ACTION_START_MONITORING = "ge.merabi.callrecorder.START_MONITORING"
+        const val ACTION_STOP_MONITORING = "ge.merabi.callrecorder.STOP_MONITORING"
 
         private const val CHANNEL_ID = "call_recording_channel"
         private const val NOTIFICATION_ID = 1001
@@ -45,31 +52,65 @@ class CallRecordingService : Service() {
     private var currentPhoneNumber: String = ""
     private var currentCallType: String = "UNKNOWN"
     private var speakerWasOnBefore = false
+    private var wasRinging = false
+    private var lastState = TelephonyManager.CALL_STATE_IDLE
 
     private lateinit var repository: RecordingRepository
+    private lateinit var telephonyManager: TelephonyManager
     private val serviceScope = CoroutineScope(Dispatchers.IO)
+
+    @Suppress("DEPRECATION")
+    private val phoneStateListener = object : PhoneStateListener() {
+        @Suppress("DEPRECATION")
+        override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+            if (!phoneNumber.isNullOrBlank()) currentPhoneNumber = phoneNumber
+
+            when (state) {
+                TelephonyManager.CALL_STATE_RINGING -> {
+                    wasRinging = true
+                }
+                TelephonyManager.CALL_STATE_OFFHOOK -> {
+                    if (lastState != TelephonyManager.CALL_STATE_OFFHOOK) {
+                        currentCallType = if (wasRinging) "INCOMING" else "OUTGOING"
+                        startRecording()
+                        updateNotification("ზარი ჩაიწერება...")
+                    }
+                }
+                TelephonyManager.CALL_STATE_IDLE -> {
+                    if (lastState != TelephonyManager.CALL_STATE_IDLE) {
+                        stopRecording()
+                        updateNotification("მონიტორინგი აქტიურია")
+                    }
+                    wasRinging = false
+                    currentPhoneNumber = ""
+                }
+            }
+            lastState = state
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         repository = RecordingRepository(AppDatabase.getInstance(applicationContext).recordingDao())
+        telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         createNotificationChannel()
     }
 
+    @Suppress("DEPRECATION")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
-                currentPhoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER) ?: ""
-                currentCallType = intent.getStringExtra(EXTRA_CALL_TYPE) ?: "UNKNOWN"
-                startForeground(NOTIFICATION_ID, buildNotification())
-                startRecording()
+            ACTION_START_MONITORING -> {
+                startForeground(NOTIFICATION_ID, buildNotification("მონიტორინგი აქტიურია"))
+                telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
             }
-            ACTION_STOP -> {
+            ACTION_STOP_MONITORING -> {
+                telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
                 stopRecording()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun startRecording() {
@@ -86,10 +127,10 @@ class CallRecordingService : Service() {
             val file = File(recordingsDir(applicationContext), "call_${timeStamp}_$safeNumber.m4a")
             currentFile = file
 
-            @Suppress("DEPRECATION")
             val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(applicationContext)
             } else {
+                @Suppress("DEPRECATION")
                 MediaRecorder()
             }
 
@@ -105,17 +146,21 @@ class CallRecordingService : Service() {
             mediaRecorder = recorder
             startTimeMs = System.currentTimeMillis()
         } catch (e: Exception) {
-            stopSelf()
+            mediaRecorder = null
         }
     }
 
     private fun stopRecording() {
+        if (mediaRecorder == null) return
+
         try {
             mediaRecorder?.stop()
         } catch (e: Exception) {
             // ზარი შესაძლოა ძალიან მოკლე იყო prepare/start-ის დასრულებამდე
         }
-        mediaRecorder?.release()
+        try {
+            mediaRecorder?.release()
+        } catch (e: Exception) { }
         mediaRecorder = null
 
         if (SettingsStore.isAutoSpeakerEnabled(applicationContext)) {
@@ -154,13 +199,26 @@ class CallRecordingService : Service() {
         }
     }
 
-    private fun buildNotification(): android.app.Notification {
+    private fun buildNotification(text: String): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ზარი ჩაიწერება")
-            .setContentText("ჩაწერა მიმდინარეობს...")
+            .setContentTitle("ზარების ჩამწერი")
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .build()
+    }
+
+    private fun updateNotification(text: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+        } catch (e: Exception) { }
+        stopRecording()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

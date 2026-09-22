@@ -32,15 +32,6 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <receiver
-            android:name=".receiver.PhoneStateReceiver"
-            android:exported="true"
-            android:permission="android.permission.READ_PHONE_STATE">
-            <intent-filter>
-                <action android:name="android.intent.action.PHONE_STATE" />
-            </intent-filter>
-        </receiver>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="ge.merabi.callrecorder.fileprovider"
