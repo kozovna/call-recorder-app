@@ -25,6 +25,7 @@ import ge.merabi.callrecorder.util.FormatUtil
 import ge.merabi.callrecorder.util.ShareUtil
 import ge.merabi.callrecorder.viewmodel.RecordingViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(viewModel: RecordingViewModel, hasAllPermissions: Boolean, onRequestPermissions: () -> Unit) {
     val context = LocalContext.current
