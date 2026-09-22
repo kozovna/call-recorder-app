@@ -1,0 +1,20 @@
+package ge.merabi.callrecorder.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val LightColors = lightColorScheme(
+    primary = PrimaryBlue,
+    onPrimary = Color.White,
+    secondary = AccentOrange,
+    background = SurfaceLight,
+    surface = Color.White,
+    error = DangerRed
+)
+
+@Composable
+fun CallRecorderTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = LightColors, content = content)
+}
