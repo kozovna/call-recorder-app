@@ -24,12 +24,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-/**
- * მუდმივად აქტიური (foreground) "მონიტორინგის" სერვისი. მას თავად UI რთავს
- * (მომხმარებლის ქმედებით — toggle), ამიტომ Android-ის "background-იდან
- * სერვისის გაშვების" შეზღუდვა მასზე არ ვრცელდება. სერვისის შიგნით
- * ვუსმენთ ზარის სტატუსის ცვლილებებს პირდაპირ TelephonyManager-ით.
- */
 class CallRecordingService : Service() {
 
     companion object {
@@ -118,7 +112,6 @@ class CallRecordingService : Service() {
             if (SettingsStore.isAutoSpeakerEnabled(applicationContext)) {
                 val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 speakerWasOnBefore = audioManager.isSpeakerphoneOn
-                audioManager.mode = AudioManager.MODE_IN_CALL
                 audioManager.isSpeakerphoneOn = true
             }
 
@@ -134,7 +127,7 @@ class CallRecordingService : Service() {
                 MediaRecorder()
             }
 
-            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
             recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             recorder.setAudioEncodingBitRate(128000)
@@ -167,7 +160,6 @@ class CallRecordingService : Service() {
             try {
                 val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 audioManager.isSpeakerphoneOn = speakerWasOnBefore
-                audioManager.mode = AudioManager.MODE_NORMAL
             } catch (e: Exception) { }
         }
 
